@@ -38,7 +38,8 @@ LOCAL_SRC_FILES := \
     core/zygisk/hook.cpp \
     core/deny/cli.cpp \
     core/deny/utils.cpp \
-    core/deny/revert.cpp
+    core/deny/revert.cpp \
+    core/deny/logcat.cpp
 
 LOCAL_LDLIBS := -llog
 LOCAL_LDFLAGS := -Wl,--dynamic-list=src/exported_sym.txt
