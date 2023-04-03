@@ -159,7 +159,6 @@ static void handle_request_async(int client, int code, const sock_cred &cred) {
         LOGI("** zygote restarted\n");
         pkg_xml_ino = 0;
         prune_su_access();
-        reset_zygisk(false);
         close(client);
         break;
     case +RequestCode::SQLITE_CMD:
@@ -175,9 +174,6 @@ static void handle_request_async(int client, int code, const sock_cred &cred) {
         }
         break;
     }
-    case +RequestCode::ZYGISK:
-        zygisk_handler(client, &cred);
-        break;
     default:
         __builtin_unreachable();
     }
@@ -201,16 +197,6 @@ static void handle_request_sync(int client, int code) {
     case +RequestCode::STOP_DAEMON: {
         // Unmount all overlays
         denylist_handler(-1, nullptr);
-
-        // Restore native bridge property
-        auto nb = get_prop(NBPROP);
-        auto len = sizeof(ZYGISKLDR) - 1;
-        if (nb == ZYGISKLDR) {
-            set_prop(NBPROP, "0");
-        } else if (nb.size() > len) {
-            set_prop(NBPROP, nb.data() + len);
-        }
-
         write_int(client, 0);
 
         // Terminate the daemon!
@@ -275,13 +261,6 @@ static void handle_request(pollfd *pfd) {
         break;
     case +RequestCode::REMOVE_MODULES:
         if (!is_root && cred.uid != AID_SHELL) {
-            write_int(client, +RespondCode::ACCESS_DENIED);
-            return;
-        }
-        break;
-    case +RequestCode::ZYGISK:
-        if (!is_zygote) {
-            // Invalid client context
             write_int(client, +RespondCode::ACCESS_DENIED);
             return;
         }

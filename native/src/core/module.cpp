@@ -211,20 +211,6 @@ public:
     }
 };
 
-class zygisk_node : public node_entry {
-public:
-    explicit zygisk_node(const char *name, bool is64bit) : node_entry(name, DT_REG, this),
-                                                           is64bit(is64bit) {}
-
-    void mount() override {
-        const string src = get_magisk_tmp() + "/magisk"s + (is64bit ? "64" : "32");
-        create_and_mount("zygisk", src, true);
-    }
-
-private:
-    bool is64bit;
-};
-
 static void inject_magisk_bins(root_node *system) {
     auto bin = system->get_child<inter_node>("bin");
     if (!bin) {
@@ -240,26 +226,6 @@ static void inject_magisk_bins(root_node *system) {
     for (int i = 0; applet_names[i]; ++i)
         delete bin->extract(applet_names[i]);
     delete bin->extract("supolicy");
-}
-
-static void inject_zygisk_libs(root_node *system) {
-    if (access("/system/bin/linker", F_OK) == 0) {
-        auto lib = system->get_child<inter_node>("lib");
-        if (!lib) {
-            lib = new inter_node("lib");
-            system->insert(lib);
-        }
-        lib->insert(new zygisk_node(native_bridge.data(), false));
-    }
-
-    if (access("/system/bin/linker64", F_OK) == 0) {
-        auto lib64 = system->get_child<inter_node>("lib64");
-        if (!lib64) {
-            lib64 = new inter_node("lib64");
-            system->insert(lib64);
-        }
-        lib64->insert(new zygisk_node(native_bridge.data(), true));
-    }
 }
 
 vector<module_info> *module_list;
@@ -305,22 +271,6 @@ void load_modules() {
     if (get_magisk_tmp() != "/sbin"sv || !str_contains(getenv("PATH") ?: "", "/sbin")) {
         // Need to inject our binaries into /system/bin
         inject_magisk_bins(system);
-    }
-
-    if (zygisk_enabled) {
-        string native_bridge_orig = get_prop(NBPROP);
-        if (native_bridge_orig.empty()) {
-            native_bridge_orig = "0";
-        }
-        native_bridge = native_bridge_orig != "0" ? ZYGISKLDR + native_bridge_orig : ZYGISKLDR;
-        set_prop(NBPROP, native_bridge.data());
-        // Weather Huawei's Maple compiler is enabled.
-        // If so, system server will be created by a special Zygote which ignores the native bridge
-        // and make system server out of our control. Avoid it by disabling.
-        if (get_prop("ro.maple.enable") == "1") {
-            set_prop("ro.maple.enable", "0");
-        }
-        inject_zygisk_libs(system);
     }
 
     if (!system->is_empty()) {
@@ -404,29 +354,7 @@ static void collect_modules(bool open_zygisk) {
             return;
 
         module_info info;
-        if (zygisk_enabled) {
-            // Riru and its modules are not compatible with zygisk
-            if (entry->d_name == "riru-core"sv || faccessat(modfd, "riru", F_OK, 0) == 0) {
-                LOGI("%s: ignore\n", entry->d_name);
-                return;
-            }
-            if (open_zygisk) {
-#if defined(__arm__)
-                info.z32 = openat(modfd, "zygisk/armeabi-v7a.so", O_RDONLY | O_CLOEXEC);
-#elif defined(__aarch64__)
-                info.z32 = openat(modfd, "zygisk/armeabi-v7a.so", O_RDONLY | O_CLOEXEC);
-                info.z64 = openat(modfd, "zygisk/arm64-v8a.so", O_RDONLY | O_CLOEXEC);
-#elif defined(__i386__)
-                info.z32 = openat(modfd, "zygisk/x86.so", O_RDONLY | O_CLOEXEC);
-#elif defined(__x86_64__)
-                info.z32 = openat(modfd, "zygisk/x86.so", O_RDONLY | O_CLOEXEC);
-                info.z64 = openat(modfd, "zygisk/x86_64.so", O_RDONLY | O_CLOEXEC);
-#else
-#error Unsupported ABI
-#endif
-                unlinkat(modfd, "zygisk/unloaded", 0);
-            }
-        } else {
+        {
             // Ignore zygisk modules when zygisk is not enabled
             if (faccessat(modfd, "zygisk", F_OK, 0) == 0) {
                 LOGI("%s: ignore\n", entry->d_name);
@@ -436,31 +364,6 @@ static void collect_modules(bool open_zygisk) {
         info.name = entry->d_name;
         module_list->push_back(info);
     });
-    if (zygisk_enabled) {
-        bool use_memfd = true;
-        auto convert_to_memfd = [&](int fd) -> int {
-            if (fd < 0)
-                return -1;
-            if (use_memfd) {
-                int memfd = syscall(__NR_memfd_create, "jit-cache", MFD_CLOEXEC);
-                if (memfd >= 0) {
-                    xsendfile(memfd, fd, nullptr, INT_MAX);
-                    close(fd);
-                    return memfd;
-                } else {
-                    // memfd_create failed, just use what we had
-                    use_memfd = false;
-                }
-            }
-            return fd;
-        };
-        std::for_each(module_list->begin(), module_list->end(), [&](module_info &info) {
-            info.z32 = convert_to_memfd(info.z32);
-#if defined(__LP64__)
-            info.z64 = convert_to_memfd(info.z64);
-#endif
-        });
-    }
 }
 
 void handle_modules() {

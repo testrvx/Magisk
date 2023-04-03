@@ -18,9 +18,7 @@ constexpr Applet applets[] = {
     { "resetprop", resetprop_main },
 };
 
-constexpr Applet private_applets[] = {
-    { "zygisk", zygisk_main },
-};
+constexpr Applet private_applets[] = {};
 
 int main(int argc, char *argv[]) {
     if (argc < 1)
