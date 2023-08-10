@@ -33,6 +33,7 @@
 #define MAIN_SOCKET   INTLROOT "/socket"
 #define LOG_PIPE      INTLROOT "/log"
 #define ZYGISKBIN     INTLROOT "/zygisk"
+#define EARLYMNT      INTLROOT "/early-mount.d"
 
 constexpr const char *applet_names[] = { "su", "resetprop", nullptr };
 
