@@ -35,6 +35,8 @@
 #define ZYGISKBIN     INTLROOT "/zygisk"
 #define EARLYMNT      INTLROOT "/early-mount.d"
 
+#define EARLYMNTNAME  "early-mount.d/v2"
+
 constexpr const char *applet_names[] = { "su", "resetprop", nullptr };
 
 #define POST_FS_DATA_WAIT_TIME       40
