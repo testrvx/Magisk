@@ -8,3 +8,5 @@
 
 using rust::xpipe2;
 using rust::fd_path;
+
+#define USE_NEW_LOADER 1

@@ -2,12 +2,15 @@
 
 #define JAVA_PACKAGE_NAME "com.topjohnwu.magisk"
 #define ZYGISKLDR       "libzygisk.so"
+#define ZYGISKLIB       "libzygisk-ld.so"
 #define NBPROP          "ro.dalvik.vm.native.bridge"
 #define SECURE_DIR      "/data/adb"
 #define MODULEROOT      SECURE_DIR "/modules"
 #define MODULEUPGRADE   SECURE_DIR "/modules_update"
 #define DATABIN         SECURE_DIR "/magisk"
 #define MAGISKDB        SECURE_DIR "/magisk.db"
+
+#define ZYGOTE_PUBLIC_LIBS "/system/etc/public.libraries.txt"
 
 // tmpfs paths
 #define INTLROOT      ".magisk"
@@ -25,6 +28,7 @@
 #define MAIN_CONFIG   INTLROOT "/config"
 #define MAIN_SOCKET   INTLROOT "/socket"
 #define LOG_PIPE      INTLROOT "/log"
+#define ZYGISKBIN     INTLROOT "/zygisk"
 
 constexpr const char *applet_names[] = { "su", "resetprop", nullptr };
 

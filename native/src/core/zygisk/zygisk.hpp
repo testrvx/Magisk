@@ -27,10 +27,19 @@ enum : int {
 #define ZLOGW(...) LOGW("zygisk32: " __VA_ARGS__)
 #endif
 
+#if defined(__LP64__)
+# define LP_SELECT(lp32, lp64) lp64
+#else
+# define LP_SELECT(lp32, lp64) lp32
+#endif
+
 extern void *self_handle;
 
 void hook_functions();
 int remote_get_info(int uid, const char *process, uint32_t *flags, std::vector<int> &fds);
+
+// Unmap all pages matching the name
+void unmap_all(const char *name);
 
 inline int zygisk_request(int req) {
     int fd = connect_daemon(MainRequest::ZYGISK);
@@ -38,6 +47,8 @@ inline int zygisk_request(int req) {
     write_int(fd, req);
     return fd;
 }
+
+#if USE_NEW_LOADER != 1
 
 // The reference of the following structs
 // https://cs.android.com/android/platform/superproject/main/+/main:art/libnativebridge/include/nativebridge/native_bridge.h
@@ -54,3 +65,5 @@ struct NativeBridgeCallbacks {
     void *padding[5];
     bool (*isCompatibleWith)(uint32_t);
 };
+
+#endif

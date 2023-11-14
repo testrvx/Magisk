@@ -22,6 +22,13 @@ extern "C" [[maybe_unused]] void zygisk_inject_entry(void *handle) {
     ZLOGD("load success\n");
 }
 
+extern "C" [[maybe_unused]] void unload_loader() {
+#if USE_NEW_LOADER == 1
+    ZLOGD("unloading loader\n");
+    unmap_all("/system/lib" LP_SELECT("", "64") "/libzygisk-ld.so");
+#endif
+}
+
 // The following code runs in zygote/app process
 
 static inline bool should_load_modules(uint32_t flags) {

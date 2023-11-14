@@ -17,6 +17,13 @@ static void lazy_unmount(const char* mountpoint) {
 void revert_unmount() {
     set<string> targets;
 
+    // Unmount zygisk files
+    for (auto &info: parse_mount_info("self")) {
+        if (info.source == "zygisk") { // bind mount from MAGISKTMP/.magisk/zygisk
+            lazy_unmount(info.target.data());
+        }
+    }
+
     // Unmount dummy skeletons and MAGISKTMP
     // since mirror nodes are always mounted under skeleton, we don't have to specifically unmount
     for (auto &info: parse_mount_info("self")) {

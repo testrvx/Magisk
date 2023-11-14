@@ -1,4 +1,5 @@
 {
     zygisk_inject_entry;
     NativeBridgeItf;
+    unload_loader;
 };

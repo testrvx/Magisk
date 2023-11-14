@@ -6,6 +6,7 @@
 #include <base.hpp>
 #include <core.hpp>
 #include <selinux.hpp>
+#include <embed.hpp>
 
 #include "zygisk.hpp"
 
@@ -89,8 +90,16 @@ static void zygiskd(int socket) {
 // This should only ever be called internally
 int zygisk_main(int argc, char *argv[]) {
     android_logging();
-    if (argc == 3 && argv[1] == "companion"sv) {
-        zygiskd(parse_int(argv[2]));
+    if (argc == 3) {
+        if (argv[1] == "companion"sv) {
+            zygiskd(parse_int(argv[2]));
+        } else if (argv[1] == "extract"sv) {
+            LOGD("extract zygisk loader to %s", argv[2]);
+            int f = xopen(argv[2], O_RDWR | O_CLOEXEC | O_CREAT);
+            if (f < 0) exit(1);
+            if (xwrite(f, zygisk_ld, sizeof(zygisk_ld)) < 0) exit(1);
+            close(f);
+        }
     }
     return 0;
 }

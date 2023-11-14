@@ -353,6 +353,12 @@ static void post_fs_data() {
 
     rust::get_magiskd().setup_logfile();
 
+    for (const char *bin : { "magisk", "magisk32", "magisk64" }) {
+        string bin_path = string(get_magisk_tmp()) + "/" + bin;
+        if (access(bin_path.data(), F_OK) == 0)
+           chmod(bin_path.data(), 0755);
+    }
+
     LOGI("** post-fs-data mode running\n");
 
     unlock_blocks();

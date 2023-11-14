@@ -15,7 +15,11 @@ using namespace std;
 
 #define VLOGD(tag, from, to) LOGD("%-8s: %s <- %s\n", tag, to, from)
 
+#if USE_NEW_LOADER == 1
+static bool mounted_zygisk = false;
+#else
 static string native_bridge = "0";
+#endif
 
 static int bind_mount(const char *reason, const char *from, const char *to) {
     int ret = xmount(from, to, nullptr, MS_BIND | MS_REC, nullptr);
@@ -210,21 +214,6 @@ public:
     }
 };
 
-class zygisk_node : public node_entry {
-public:
-    explicit zygisk_node(const char *name, bool is64bit) : node_entry(name, DT_REG, this),
-                                                           is64bit(is64bit) {}
-
-    void mount() override {
-        const string src = get_magisk_tmp() + "/magisk"s + (is64bit ? "64" : "32");
-        create_and_mount("zygisk", src);
-        xmount(nullptr, node_path().data(), nullptr, MS_REMOUNT | MS_BIND | MS_RDONLY, nullptr);
-    }
-
-private:
-    bool is64bit;
-};
-
 static void inject_magisk_bins(root_node *system) {
     auto bin = system->get_child<inter_node>("bin");
     if (!bin) {
@@ -241,6 +230,118 @@ static void inject_magisk_bins(root_node *system) {
         delete bin->extract(applet_names[i]);
     delete bin->extract("supolicy");
 }
+
+#if USE_NEW_LOADER == 1
+#include <embed.hpp>
+#include <wait.h>
+
+static int extract_bin(const char *prog, const char *dst) {
+    int pid = xfork();
+    int status;
+    if (pid == 0) {
+        execl(prog, "", "zygisk", "extract", dst, nullptr);
+        PLOGE("execl");
+        exit(-2);
+    } else if (pid > 0) {
+        waitpid(pid, &status, 0);
+        return WEXITSTATUS(status);
+    } else {
+        return -1;
+    }
+}
+
+class zygisk_node : public node_entry {
+public:
+    explicit zygisk_node(const char *name, bool is64bit) : node_entry(name, DT_REG, this),
+                                                           is64bit(is64bit) {}
+
+    void mount() override {
+        string src = get_magisk_tmp();
+        if (name() == ZYGISKLIB) {
+            string mbin = string(get_magisk_tmp()) + "/magisk" + (is64bit ? "64" : "32");
+            src += string("/" ZYGISKBIN "/") + name();
+            src += is64bit ? ".64" : ".32";
+            int r = extract_bin(mbin.data(), src.data());
+            if (r) {
+                LOGE("failed to extract zygisk-ld (%d)", r);
+                return;
+            }
+        } else {
+            src += "/magisk"s + (is64bit ? "64" : "32");;
+        }
+
+        create_and_mount("zygisk", src);
+        xmount(nullptr, node_path().data(), nullptr, MS_REMOUNT | MS_BIND | MS_RDONLY, nullptr);
+    }
+
+private:
+    bool is64bit;
+};
+
+static void inject_zygisk_libs(root_node *system) {
+    if (access("/system/bin/linker", F_OK) == 0) {
+        auto lib = system->get_child<inter_node>("lib");
+        if (!lib) {
+            lib = new inter_node("lib");
+            system->insert(lib);
+        }
+        lib->insert(new zygisk_node(ZYGISKLIB, false));
+        lib->insert(new zygisk_node(ZYGISKLDR, false));
+    }
+
+    if (access("/system/bin/linker64", F_OK) == 0) {
+        auto lib64 = system->get_child<inter_node>("lib64");
+        if (!lib64) {
+            lib64 = new inter_node("lib64");
+            system->insert(lib64);
+        }
+        lib64->insert(new zygisk_node(ZYGISKLIB, true));
+        lib64->insert(new zygisk_node(ZYGISKLDR, true));
+    }
+}
+
+static void mount_zygisk() {
+    string zygisk_file = string(get_magisk_tmp()) + "/" ZYGISKBIN "/public.libraries.txt";
+    rm_rf(zygisk_file.data());
+    cp_afc(ZYGOTE_PUBLIC_LIBS, zygisk_file.data());
+
+    int fd = xopen(zygisk_file.data(), O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0);
+    if (fd >= 0) {
+        LOGI("* Enable Zygisk\n");
+        // append zygisk library into /system/etc/public.libraries.txt to let zygote load it
+        const char *txt = "\n#Zygisk loader:\n" ZYGISKLIB "\n";
+        xwrite(fd, txt, strlen(txt)); close(fd);
+        if (xmount(zygisk_file.data(), ZYGOTE_PUBLIC_LIBS, nullptr, MS_BIND, nullptr) == 0) {
+            xmount(nullptr, ZYGOTE_PUBLIC_LIBS, nullptr, MS_REMOUNT | MS_BIND | MS_RDONLY, nullptr);
+            mounted_zygisk = true;
+       }
+    }
+}
+
+#define DO_MOUNT_ZYGISK if (!mounted_zygisk) mount_zygisk();
+
+#define DO_UNMOUNT_ZYGISK \
+        if (mounted_zygisk) { \
+            umount2(ZYGOTE_PUBLIC_LIBS, MNT_DETACH); \
+            mounted_zygisk = false; \
+        }
+
+#else
+class zygisk_node : public node_entry {
+public:
+    explicit zygisk_node(const char *name, bool is64bit) : node_entry(name, DT_REG, this),
+                                                           is64bit(is64bit) {}
+
+    void mount() override {
+        const string src = get_magisk_tmp() + "/magisk"s + (is64bit ? "64" : "32");
+        create_and_mount("zygisk", src);
+        xmount(nullptr, node_path().data(), nullptr, MS_REMOUNT | MS_BIND | MS_RDONLY, nullptr);
+    }
+
+private:
+    bool is64bit;
+};
+
 
 static void inject_zygisk_libs(root_node *system) {
     if (access("/system/bin/linker", F_OK) == 0) {
@@ -261,6 +362,9 @@ static void inject_zygisk_libs(root_node *system) {
         lib64->insert(new zygisk_node(native_bridge.data(), true));
     }
 }
+#define DO_MOUNT_ZYGISK
+#define DO_UNMOUNT_ZYGISK
+#endif
 
 vector<module_info> *module_list;
 
@@ -308,6 +412,11 @@ void load_modules() {
     }
 
     if (zygisk_enabled) {
+#if USE_NEW_LOADER == 1
+        string zygisk_bin = string(get_magisk_tmp()) + "/" ZYGISKBIN;
+        mkdir(zygisk_bin.data(), 0);
+        xmount("zygisk", zygisk_bin.data(), "tmpfs", 0, "mode=755");
+#else
         string native_bridge_orig = get_prop(NBPROP);
         if (native_bridge_orig.empty()) {
             native_bridge_orig = "0";
@@ -320,6 +429,7 @@ void load_modules() {
         if (get_prop("ro.maple.enable") == "1") {
             set_prop("ro.maple.enable", "0", true);
         }
+#endif
         inject_zygisk_libs(system);
     }
 
@@ -337,6 +447,13 @@ void load_modules() {
         root->prepare();
         root->mount();
     }
+
+#if USE_NEW_LOADER == 1
+    // Mount on top of modules to enable zygisk
+    if (zygisk_enabled) {
+        DO_MOUNT_ZYGISK
+    }
+#endif
 
     ssprintf(buf, sizeof(buf), "%s/" WORKERDIR, get_magisk_tmp());
     xmount(nullptr, buf, nullptr, MS_REMOUNT | MS_RDONLY, nullptr);
@@ -523,10 +640,13 @@ void reset_zygisk(bool restore) {
     static atomic_uint zygote_start_count{1};
     if (restore) {
         zygote_start_count = 1;
+        DO_MOUNT_ZYGISK
     } else if (zygote_start_count.fetch_add(1) > 3) {
         LOGW("zygote crashes too many times, rolling-back\n");
         restore = true;
+        DO_UNMOUNT_ZYGISK
     }
+#if USE_NEW_LOADER != 1
     if (restore) {
         string native_bridge_orig = "0";
         if (native_bridge.length() > strlen(ZYGISKLDR)) {
@@ -536,4 +656,5 @@ void reset_zygisk(bool restore) {
     } else {
         set_prop(NBPROP, native_bridge.data(), true);
     }
+#endif
 }
