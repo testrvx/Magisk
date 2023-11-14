@@ -242,6 +242,7 @@ static void inject_magisk_bins(root_node *system) {
     delete bin->extract("supolicy");
 }
 
+#if USE_PTRACE != 1
 static void inject_zygisk_libs(root_node *system) {
     if (access("/system/bin/linker", F_OK) == 0) {
         auto lib = system->get_child<inter_node>("lib");
@@ -261,6 +262,7 @@ static void inject_zygisk_libs(root_node *system) {
         lib64->insert(new zygisk_node(native_bridge.data(), true));
     }
 }
+#endif
 
 vector<module_info> *module_list;
 
@@ -308,6 +310,21 @@ void load_modules() {
     }
 
     if (zygisk_enabled) {
+#if USE_PTRACE == 1
+        char *b = buf + ssprintf(buf, sizeof(buf), "%s/" ZYGISKLIB "/", get_magisk_tmp());
+        if (access("/system/bin/linker", F_OK) == 0) {
+            strcpy(b, "32");
+            mkdirs(buf, 0755); 
+            strcpy(b, "32/" ZYGISKLDR);
+            cp_afc((string(get_magisk_tmp()) + "/magisk32").data(), buf);
+        }
+        if (access("/system/bin/linker64", F_OK) == 0) {
+            strcpy(b, "64");
+            mkdirs(buf, 0755); 
+            strcpy(b, "64/" ZYGISKLDR);
+            cp_afc((string(get_magisk_tmp()) + "/magisk64").data(), buf);
+        }
+#else
         string native_bridge_orig = get_prop(NBPROP);
         if (native_bridge_orig.empty()) {
             native_bridge_orig = "0";
@@ -321,6 +338,7 @@ void load_modules() {
             set_prop("ro.maple.enable", "0");
         }
         inject_zygisk_libs(system);
+#endif
     }
 
     if (!system->is_empty()) {
