@@ -240,6 +240,7 @@ static void inject_magisk_bins(root_node *system) {
     delete bin->extract("supolicy");
 }
 
+#if USE_PTRACE != 1
 static void inject_zygisk_libs(root_node *system) {
     if (access("/system/bin/linker", F_OK) == 0) {
         auto lib = system->get_child<inter_node>("lib");
@@ -259,6 +260,7 @@ static void inject_zygisk_libs(root_node *system) {
         lib64->insert(new zygisk_node(native_bridge.data(), true));
     }
 }
+#endif
 
 vector<module_info> *module_list;
 
@@ -305,6 +307,7 @@ void load_modules() {
         inject_magisk_bins(system);
     }
 
+#if USE_PTRACE != 1
     if (zygisk_enabled) {
         string native_bridge_orig = get_prop(NBPROP);
         if (native_bridge_orig.empty()) {
@@ -320,6 +323,7 @@ void load_modules() {
         }
         inject_zygisk_libs(system);
     }
+#endif
 
     if (!system->is_empty()) {
         // Handle special read-only partitions
