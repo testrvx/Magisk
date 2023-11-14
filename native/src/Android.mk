@@ -11,6 +11,7 @@ LOCAL_MODULE := magisk
 LOCAL_STATIC_LIBRARIES := \
     libbase \
     libsystemproperties \
+    libphmap \
     liblsplt \
     libmagisk-rs
 
@@ -35,6 +36,7 @@ LOCAL_SRC_FILES := \
     core/zygisk/entry.cpp \
     core/zygisk/main.cpp \
     core/zygisk/hook.cpp \
+    core/zygisk/memory.cpp \
     core/zygisk/native_bridge.cpp \
     core/deny/cli.cpp \
     core/deny/utils.cpp \
