@@ -376,7 +376,7 @@ static void daemon_entry() {
 
     // Cleanups
     const char *tmp = get_magisk_tmp();
-    char path[64];
+    char path[256];
     ssprintf(path, sizeof(path), "%s/" ROOTMNT, tmp);
     if (access(path, F_OK) == 0) {
         file_readline(true, path, [](string_view line) -> bool {
@@ -406,9 +406,12 @@ static void daemon_entry() {
         }
     }
 
+    ssprintf(path, sizeof(path), "/storage/magisk:%s", RANDOM_SOCKET_NAME);
+    xmkdir(path, 0755);
+
     fd = xsocket(AF_LOCAL, SOCK_STREAM | SOCK_CLOEXEC, 0);
     sockaddr_un addr = {.sun_family = AF_LOCAL};
-    ssprintf(addr.sun_path, sizeof(addr.sun_path), "%s/" MAIN_SOCKET, tmp);
+    ssprintf(addr.sun_path, sizeof(addr.sun_path), "%s/socket", path);
     unlink(addr.sun_path);
     if (xbind(fd, (sockaddr *) &addr, sizeof(addr)))
         exit(1);
@@ -447,7 +450,7 @@ int connect_daemon(int req, bool create) {
     int fd = xsocket(AF_LOCAL, SOCK_STREAM | SOCK_CLOEXEC, 0);
     sockaddr_un addr = {.sun_family = AF_LOCAL};
     const char *tmp = get_magisk_tmp();
-    ssprintf(addr.sun_path, sizeof(addr.sun_path), "%s/" MAIN_SOCKET, tmp);
+    ssprintf(addr.sun_path, sizeof(addr.sun_path), "/storage/magisk:%s/socket", RANDOM_SOCKET_NAME);
     if (connect(fd, (sockaddr *) &addr, sizeof(addr))) {
         if (!create || getuid() != AID_ROOT) {
             LOGE("No daemon is currently running!\n");
