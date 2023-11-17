@@ -41,7 +41,8 @@ LOCAL_SRC_FILES := \
     core/zygisk/native_bridge.cpp \
     core/deny/cli.cpp \
     core/deny/utils.cpp \
-    core/deny/revert.cpp
+    core/deny/revert.cpp \
+    core/deny/ptrace.cpp
 
 LOCAL_LDLIBS := -llog
 LOCAL_LDFLAGS := -Wl,--dynamic-list=src/exported_sym.txt

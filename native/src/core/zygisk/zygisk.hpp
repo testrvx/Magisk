@@ -11,6 +11,7 @@ enum : int {
     GET_INFO,
     CONNECT_COMPANION,
     GET_MODDIR,
+    SULIST_ROOT_NS,
     END
 };
 }
@@ -37,6 +38,7 @@ extern void *self_handle;
 
 void hook_functions();
 int remote_get_info(int uid, const char *process, uint32_t *flags, std::vector<int> &fds);
+int remote_request_sulist();
 
 // Unmap all pages matching the name
 void unmap_all(const char *name);
