@@ -4,6 +4,7 @@
 #include <android/log.h>
 
 #include <base.hpp>
+#include <core.hpp>
 
 #include "deny.hpp"
 
@@ -123,15 +124,29 @@ static void check_zygote() {
             if (read_ns(pid, &st) == 0) {
                 LOGI("logcat: zygote PID=[%d]\n", pid);
                 zygote_map[pid] = st;
+                if (sulist_enabled && fork_dont_care() == 0) {
+                    revert_unmount(pid);
+                    _exit(0);
+                }
             }
         }
+    }
+}
+
+static void operate_on_list(int pid) {
+    {
+        (sulist_enabled) ?
+        // if sulist is enabled
+        // the target is the process we want to mount magisk
+        // else, the target is the process we want to unmount magisk
+        do_mount_magisk(pid) : revert_unmount(pid);
     }
 }
 
 static void handle_proc(int pid, bool app_zygote = false) {
     if (fork_dont_care() == 0) {
         if (app_zygote) {
-            revert_unmount(pid);
+            operate_on_list(pid);
             kill(pid, SIGCONT);
             _exit(0);
         }
@@ -155,7 +170,7 @@ static void handle_proc(int pid, bool app_zygote = false) {
             }
         }
 
-        revert_unmount(pid);
+        operate_on_list(pid);
         _exit(0);
     }
 }

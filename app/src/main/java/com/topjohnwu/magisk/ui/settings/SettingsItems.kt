@@ -233,27 +233,73 @@ object Zygisk : BaseSettingsItem.Toggle() {
 }
 
 object DenyList : BaseSettingsItem.Toggle() {
-    override val title = R.string.settings_denylist_title.asText()
-    override val description get() = R.string.settings_denylist_summary.asText()
+    override val title = R.string.settings_magiskhide_title.asText()
+    override val description get() =
+        if (Info.sulist) R.string.settings_sulist_enforced.asText()
+        else R.string.settings_magiskhide_summary.asText()
 
     override var value = Config.denyList
         set(value) {
             field = value
             val cmd = if (value) "enable" else "disable"
-            Shell.cmd("magisk --denylist $cmd").submit { result ->
+            Shell.cmd("magisk magiskhide $cmd").submit { result ->
                 if (result.isSuccess) {
+					SuList.notifyPropertyChanged(BR.description)
                     Config.denyList = value
+                    DenyListConfig.refresh()
+                    SuList.refresh()
                 } else {
                     field = !value
                     notifyPropertyChanged(BR.checked)
                 }
             }
         }
+
+}
+
+object SuList : BaseSettingsItem.Toggle() {
+    override val title = R.string.settings_sulist_title.asText()
+    override val description get() =
+        if (!Config.denyList) R.string.settings_sulist_error_magiskhide.asText()
+        else if (mismatch) R.string.reboot_apply_change.asText()
+        else R.string.settings_sulist_summary.asText()
+
+
+    override var value = Config.sulist
+        set(value) {
+            field = value
+            val cmd = if (value) "1" else "0"
+            Shell.cmd("magisk --sqlite \"REPLACE INTO settings (key,value) VALUES('sulist',$cmd);\"").submit { result ->
+                if (result.isSuccess) {
+                    Config.sulist = value
+                    notifyPropertyChanged(BR.description)
+                } else {
+                    field = !value
+                    notifyPropertyChanged(BR.checked)
+                }
+            }
+        }
+
+    override fun refresh() {
+        isEnabled = Config.denyList
+    }
+	val mismatch get() = value != Info.sulist
 }
 
 object DenyListConfig : BaseSettingsItem.Blank() {
-    override val title = R.string.settings_denylist_config_title.asText()
-    override val description = R.string.settings_denylist_config_summary.asText()
+    var status = Shell.cmd("magisk magiskhide sulist").exec().isSuccess;
+
+    override val title get() =
+        if (Info.sulist) R.string.settings_sulist_config_title.asText()
+        else R.string.settings_hidelist_config_title.asText()
+    override val description get() =
+        if (Info.sulist) R.string.settings_sulist_config_summary.asText()
+        else R.string.settings_hidelist_config_summary.asText()
+
+
+    override fun refresh() {
+        isEnabled = true
+    }
 }
 
 // --- Superuser

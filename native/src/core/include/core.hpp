@@ -37,8 +37,11 @@ struct module_info {
 };
 
 extern bool zygisk_enabled;
+extern bool sulist_enabled;
 extern std::vector<module_info> *module_list;
 extern std::string native_bridge;
+
+extern int magisktmpfs_fd;
 
 int connect_daemon(int req, bool create = false);
 std::string find_preinit_device();
@@ -89,5 +92,12 @@ extern std::atomic_flag skip_pkg_rescan;
 extern std::atomic<bool> denylist_enforced;
 int denylist_cli(int argc, char **argv);
 void initialize_denylist();
-bool is_deny_target(int uid, std::string_view process);
+bool is_deny_target(int uid, std::string_view process, int max_len = 1024);
+void crawl_procfs(const std::function<bool(int)> &fn);
+
+// Revert
 void revert_unmount(int pid = -1);
+
+// SuList
+void do_mount_magisk(int pid);
+void update_sulist_config(bool enable);
