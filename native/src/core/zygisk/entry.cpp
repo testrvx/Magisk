@@ -26,6 +26,7 @@ extern "C" [[maybe_unused]] void unload_loader() {
 #if USE_NEW_LOADER == 1
     ZLOGD("unloading loader\n");
     unmap_all("/system/lib" LP_SELECT("", "64") "/libzygisk-ld.so");
+    RemoveZygiskPathsFromSolist();
 #endif
 }
 

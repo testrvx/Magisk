@@ -42,7 +42,9 @@ LOCAL_SRC_FILES := \
     core/deny/cli.cpp \
     core/deny/utils.cpp \
     core/deny/revert.cpp \
-    core/deny/ptrace.cpp
+    core/deny/ptrace.cpp \
+    core/zygisk/elf_util.cpp \
+    core/zygisk/hide_utils.cpp
 
 LOCAL_LDLIBS := -llog
 LOCAL_LDFLAGS := -Wl,--dynamic-list=src/exported_sym.txt
@@ -60,9 +62,16 @@ LOCAL_STRIP_MODE := --strip-all
 include $(BUILD_SHARED_LIBRARY)
 
 include $(CLEAR_VARS)
+LOCAL_STATIC_LIBRARIES := \
+    libbase \
+    liblsplt
+
 LOCAL_MODULE := zygisk-ld
-LOCAL_SRC_FILES := core/zygisk/loader.c
-LOCAL_STRIP_MODE := --strip-all
+LOCAL_SRC_FILES := \
+    core/zygisk/loader.cpp \
+    core/zygisk/utils.cpp
+
+LOCAL_LDLIBS := -llog
 include $(BUILD_SHARED_LIBRARY)
 
 endif

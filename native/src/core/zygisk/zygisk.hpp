@@ -43,6 +43,9 @@ int remote_request_sulist();
 // Unmap all pages matching the name
 void unmap_all(const char *name);
 
+// Remap all pages matching the name
+void remap_all(const char *name);
+
 inline int zygisk_request(int req) {
     int fd = connect_daemon(MainRequest::ZYGISK);
     if (fd < 0) return fd;
@@ -69,3 +72,5 @@ struct NativeBridgeCallbacks {
 };
 
 #endif
+
+void RemoveZygiskPathsFromSolist();
