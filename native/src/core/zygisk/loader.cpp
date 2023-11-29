@@ -9,12 +9,17 @@
 # define LP_SELECT(lp32, lp64) lp32
 #endif
 
+#define RANDOM_SOCKET_NAME  "d30138f2310a9fb9c54a3e0c21f58591\0"
+
 void remap_all(const char *name);
 
 __attribute__((constructor))
 static void zygisk_loader(void) {
-    void *handle = dlopen("/system/lib" LP_SELECT("", "64") "/libzygisk.so", RTLD_LAZY);
-    remap_all("/system/lib" LP_SELECT("", "64") "/libzygisk.so");
+    char ZYGISK_PATH[1024];
+    sprintf(ZYGISK_PATH, "/dev/%s.libzygisk.so." LP_SELECT("32", "64"), RANDOM_SOCKET_NAME);
+
+    void *handle = dlopen(ZYGISK_PATH, RTLD_LAZY);
+    remap_all(ZYGISK_PATH);
     if (handle) {
         if (auto fp = fopen("/proc/self/attr/current", "r")) {
             char buf[1024];

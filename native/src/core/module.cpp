@@ -297,7 +297,6 @@ static void inject_zygisk_libs(root_node *system) {
             system->insert(lib);
         }
         lib->insert(new zygisk_node(ZYGISKLIB, false));
-        lib->insert(new zygisk_node(ZYGISKLDR, false));
     }
 
     if (access("/system/bin/linker64", F_OK) == 0) {
@@ -307,7 +306,6 @@ static void inject_zygisk_libs(root_node *system) {
             system->insert(lib64);
         }
         lib64->insert(new zygisk_node(ZYGISKLIB, true));
-        lib64->insert(new zygisk_node(ZYGISKLDR, true));
     }
 }
 
@@ -423,6 +421,15 @@ void load_modules() {
 
     if (zygisk_enabled) {
 #if USE_NEW_LOADER == 1
+#define ZYGISK_PATH string(libpath)
+
+        char libpath[1024];
+        ssprintf(libpath, sizeof(libpath), "/dev/%s.libzygisk.so.", RANDOM_SOCKET_NAME);
+        close(xopen((ZYGISK_PATH + "32").data(), O_RDONLY | O_CREAT | O_CLOEXEC, 0));
+        close(xopen((ZYGISK_PATH + "64").data(), O_RDONLY | O_CREAT | O_CLOEXEC, 0));
+        xmount((string(get_magisk_tmp()) + "/magisk32").data(), (ZYGISK_PATH + "32").data(), nullptr, MS_BIND, nullptr);
+        xmount((string(get_magisk_tmp()) + "/magisk64").data(), (ZYGISK_PATH + "64").data(), nullptr, MS_BIND, nullptr);
+
         string zygisk_bin = string(get_magisk_tmp()) + "/" ZYGISKBIN;
         mkdir(zygisk_bin.data(), 0);
         xmount("zygisk", zygisk_bin.data(), "tmpfs", 0, "mode=755");
