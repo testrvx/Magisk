@@ -546,7 +546,20 @@ xdirect_install_system() {
 # Initialize
 #############
 
+abandon_chinese() {
+  [ "$(id -u)" != 0 ] && return
+  local BLOCK_LOCALE_LIST="zh-CN zh-TW"
+  for locale in $BLOCK_LOCALE_LIST; do
+    if [ "$(getprop persist.sys.locale)" == "$locale" ] && !(magisk -v | grep -q '\-kitsune'); then
+        su 2000 -c "cmd notification post -S bigtext -t 'Kitsune Mask' 'Tag' '抱歉，中国用户无法使用Kitsune Mask，请使用官方Magisk或其他Magisk fork代替'"
+        pm uninstall io.github.huskydg.magisk
+        break
+    fi
+  done
+}
+
 app_init() {
+  abandon_chinese
   mount_partitions
   RAMDISKEXIST=false
   check_boot_ramdisk && RAMDISKEXIST=true
