@@ -77,6 +77,15 @@ int remote_request_sulist() {
     return -1;
 }
 
+int remote_request_umount() {
+    if (int fd = zygisk_request(ZygiskRequest::REVERT_UNMOUNT); fd >= 0) {
+        int res = read_int(fd);
+        close(fd);
+        return res;
+    }
+    return -1;
+}
+
 // The following code runs in magiskd
 
 static vector<int> get_module_fds(bool is_64_bit) {
@@ -228,6 +237,19 @@ static void mount_magisk_to_remote(int client, const sock_cred *cred) {
     }
 }
 
+static void revert_unmount(int client, const sock_cred *cred) {
+    int pid = fork();
+    if (pid == 0) {
+        revert_unmount(cred->pid);
+        _exit(0);
+    } else if (pid > 0) {
+        waitpid(pid, nullptr, 0);
+        write_int(client, 0);
+    } else {
+        write_int(client, -1);
+    }
+}
+
 static void get_moddir(int client) {
     int id = read_int(client);
     char buf[4096];
@@ -256,6 +278,9 @@ void zygisk_handler(int client, const sock_cred *cred) {
         break;
     case ZygiskRequest::SULIST_ROOT_NS:
         mount_magisk_to_remote(client, cred);
+        break;
+    case ZygiskRequest::REVERT_UNMOUNT:
+        revert_unmount(client, cred);
         break;
     default:
         // Unknown code
