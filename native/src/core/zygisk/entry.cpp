@@ -79,9 +79,12 @@ int remote_request_sulist() {
 
 int remote_request_umount() {
     if (int fd = zygisk_request(ZygiskRequest::REVERT_UNMOUNT); fd >= 0) {
-        int res = read_int(fd);
+        auto clean_ns = recv_fd(fd);
+        LOGD("denylist: set to clean ns %d\n", clean_ns);
+        if (clean_ns > 0) xsetns(clean_ns, CLONE_NEWNS);
+        close(clean_ns);
         close(fd);
-        return res;
+        return 0;
     }
     return -1;
 }
@@ -237,16 +240,25 @@ static void mount_magisk_to_remote(int client, const sock_cred *cred) {
     }
 }
 
-static void revert_unmount(int client, const sock_cred *cred) {
-    int pid = fork();
-    if (pid == 0) {
-        revert_unmount(cred->pid);
-        _exit(0);
-    } else if (pid > 0) {
-        waitpid(pid, nullptr, 0);
-        write_int(client, 0);
+static int get_clean_ns(pid_t pid) {
+    int pipe_fd[2];
+    pipe(pipe_fd);
+    if (int child = xfork(); !child) {
+        switch_mnt_ns(pid);
+        xunshare(CLONE_NEWNS);
+        revert_unmount();
+        write_int(pipe_fd[1], 0);
+        read_int(pipe_fd[0]);
+        exit(0);
     } else {
-        write_int(client, -1);
+        read_int(pipe_fd[0]);
+        char buf[PATH_MAX];
+        ssprintf(buf, PATH_MAX, "/proc/%d/ns/mnt", child);
+        auto clean_ns = open(buf, O_RDONLY);
+        write_int(pipe_fd[1], 0);
+        close(pipe_fd[0]);
+        close(pipe_fd[1]);
+        return clean_ns;
     }
 }
 
@@ -280,7 +292,16 @@ void zygisk_handler(int client, const sock_cred *cred) {
         mount_magisk_to_remote(client, cred);
         break;
     case ZygiskRequest::REVERT_UNMOUNT:
-        revert_unmount(client, cred);
+        get_exe(cred->pid, buf, sizeof(buf));
+        int clean_ns;
+        if (str_ends(buf, "64")) {
+            static int clean_ns64 = get_clean_ns(cred->pid);
+            clean_ns = clean_ns64;
+        } else {
+            static int clean_ns32 = get_clean_ns(cred->pid);
+            clean_ns = clean_ns32;
+        }
+        send_fd(client, clean_ns);
         break;
     default:
         // Unknown code
