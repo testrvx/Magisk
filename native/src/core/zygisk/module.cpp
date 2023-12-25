@@ -126,15 +126,16 @@ case 2: {                              \
 }                                      \
 case 3:                                \
 case 4:                                \
+case 5:                                \
     mod.v1->method(mod.v1->impl, args);\
     break;                             \
 }
 
-void ZygiskModule::preAppSpecialize(AppSpecializeArgs_v3 *args) const {
+void ZygiskModule::preAppSpecialize(AppSpecializeArgs_v5 *args) const {
     call_app(preAppSpecialize)
 }
 
-void ZygiskModule::postAppSpecialize(const AppSpecializeArgs_v3 *args) const {
+void ZygiskModule::postAppSpecialize(const AppSpecializeArgs_v5 *args) const {
     call_app(postAppSpecialize)
 }
 
@@ -364,13 +365,6 @@ void ZygiskContext::app_specialize_pre() {
 
     vector<int> module_fds;
     int fd = remote_get_info(args.app->uid, process, &info_flags, module_fds);
-    if (args.app->app_data_dir) {
-        const auto *app_data_dir = env->GetStringUTFChars(args.app->app_data_dir, nullptr);
-        if (std::string_view(app_data_dir).ends_with("/com.android.systemui")) {
-            info_flags |= PROCESS_IS_SYS_UI;
-        }
-        env->ReleaseStringUTFChars(args.app->app_data_dir, app_data_dir);
-    }
     if ((info_flags & UNMOUNT_MASK) == UNMOUNT_MASK) {
         ZLOGI("[%s] is on the denylist\n", process);
         flags |= DO_REVERT_UNMOUNT;
