@@ -6,6 +6,7 @@
 #include <limits>
 #include <atomic>
 #include <functional>
+#include <set>
 
 #include "socket.hpp"
 #include "../core-rs.hpp"
@@ -44,6 +45,7 @@ extern std::string native_bridge;
 
 extern int magisktmpfs_fd;
 extern bool HAVE_32;
+extern std::set<dev_t> worker_id;
 
 void reset_zygisk(bool restore);
 int connect_daemon(int req, bool create = false);

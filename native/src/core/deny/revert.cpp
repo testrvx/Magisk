@@ -84,7 +84,10 @@ void recreate_sbin_v2(const char *mirror, bool use_bind_mount) {
     }
 }
 
-int mount_sbin() {
+int mount_sbin(const char *tmp) {
+    if (strcmp(tmp, "/sbin"))
+        return tmpfs_mount("tmpfs", tmp);
+
     if (is_rootfs()){
         if (xmount(nullptr, "/", nullptr, MS_REMOUNT, nullptr) != 0) return -1;
         mkdir("/sbin", 0750);
@@ -92,12 +95,12 @@ int mount_sbin() {
         mkdir("/root", 0750);
         clone_attr("/sbin", "/root");
         link_path("/sbin", "/root");
-        if (tmpfs_mount("magisk", "/sbin") != 0) return -1;
+        if (tmpfs_mount("tmpfs", "/sbin") != 0) return -1;
         setfilecon("/sbin", "u:object_r:rootfs:s0");
         recreate_sbin_v2("/root", false);
         xmount(nullptr, "/", nullptr, MS_REMOUNT | MS_RDONLY, nullptr);
     } else {
-        if (tmpfs_mount("magisk", "/sbin") != 0) return -1;
+        if (tmpfs_mount("tmpfs", "/sbin") != 0) return -1;
         setfilecon("/sbin", "u:object_r:rootfs:s0");
         xmkdir("/sbin/" INTLROOT, 0755);
         xmkdir("/sbin/" MIRRDIR, 0755);
@@ -127,16 +130,12 @@ void do_mount_magisk(int pid) {
 
     xmount(nullptr, "/", nullptr, MS_SLAVE | MS_REC, nullptr);
 
-    if (MAGISKTMP == "/sbin") {
-        if (is_rootfs()) {
-            tmpfs_mount("magisk", "/sbin");
-            setfilecon("/sbin", "u:object_r:rootfs:s0");
-            recreate_sbin_v2("/root", false);
-        } else {
-            mount_sbin();
-        }
+    if (MAGISKTMP == "/sbin" && is_rootfs()) {
+        tmpfs_mount("tmpfs", "/sbin");
+        setfilecon("/sbin", "u:object_r:rootfs:s0");
+        recreate_sbin_v2("/root", false);
     } else {
-        tmpfs_mount("magisk", MAGISKTMP.data());
+        mount_sbin(MAGISKTMP.data());
     }
 
     for (auto file : {"magisk32", "magisk64", "magisk", "magiskpolicy"}) {
@@ -210,7 +209,7 @@ void revert_unmount(int pid) {
     // Unmount dummy skeletons and MAGISKTMP
     // since mirror nodes are always mounted under skeleton, we don't have to specifically unmount
     for (auto &info: parse_mount_info("self")) {
-        if (info.source == "magisk" || info.source == "worker" || // magisktmp tmpfs
+        if (worker_id.count(info.device) || // magisktmp tmpfs
             info.target.starts_with("/data/adb/modules") || // bind mount inside modules directory
             info.root.starts_with("/adb/modules")) { // bind mount from data partition
             targets.insert(info.target);

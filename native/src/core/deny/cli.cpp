@@ -3,6 +3,7 @@
 
 #include <consts.hpp>
 #include <base.hpp>
+#include <socket.hpp>
 
 #include "deny.hpp"
 
@@ -69,6 +70,21 @@ void denylist_handler(int client, const sock_cred *cred) {
     case DenyRequest::SULIST_STATUS:
         res = (sulist_enabled)? DenyResponse::SULIST_ENFORCED : DenyResponse::SULIST_NOT_ENFORCED;
         break;
+    case DenyRequest::GET_UNMOUNT: {
+        sock_cred cred;
+        res = (get_client_cred(client, &cred))? 0 : -1;
+        if (res == 0) {
+            int child = xfork();
+            if (!child) {
+                switch_mnt_ns(cred.pid);
+                revert_unmount();
+                _exit(0);
+            } else if (child > 0) {
+                waitpid(child, nullptr, 0);
+            }
+        }
+        break;
+    }
     default:
         // Unknown request code
         break;
@@ -102,11 +118,10 @@ int denylist_cli(int argc, char **argv) {
                 req = DenyRequest::DISABLE_SULIST;
         } else req = DenyRequest::SULIST_STATUS;
     } else if (argv[1] == "exec"sv && argc > 2) {
-        xunshare(CLONE_NEWNS);
+        if (switch_mnt_ns(1))
+            return -1;
         xmount(nullptr, "/", nullptr, MS_PRIVATE | MS_REC, nullptr);
-        revert_unmount();
-        execvp(argv[2], argv + 2);
-        exit(1);
+        req = DenyRequest::GET_UNMOUNT;
     } else {
         usage();
     }
@@ -123,6 +138,12 @@ int denylist_cli(int argc, char **argv) {
     int res = read_int(fd);
     if (res < 0 || res >= DenyResponse::END)
         res = DenyResponse::ERROR;
+
+    if (req == DenyRequest::GET_UNMOUNT) {
+        execvp(argv[2], argv + 2);
+        return 1;
+    }
+
     switch (res) {
     case DenyResponse::NOT_ENFORCED:
         fprintf(stderr, "MagiskHide is disabled\n");

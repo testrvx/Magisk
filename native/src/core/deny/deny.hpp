@@ -23,6 +23,7 @@ enum : int {
     SULIST_STATUS,
     ENFORCE_SULIST,
     DISABLE_SULIST,
+    GET_UNMOUNT,
 
     END
 };

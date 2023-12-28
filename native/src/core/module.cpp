@@ -130,7 +130,7 @@ void dir_node::collect_module_files(const char *module, int dfd) {
  ************************/
 
 void node_entry::create_and_mount(const char *reason, const string &src, bool ro) {
-    const string dest = isa<tmpfs_node>(parent()) ? worker_path() : node_path();
+    const string dest = node_path();
     if (is_lnk()) {
         VLOGD("cp_link", src.data(), dest.data());
         cp_afc(src.data(), dest.data());
@@ -172,23 +172,29 @@ void module_node::mount() {
     }
 }
 
+set<dev_t> worker_id;
+
 void tmpfs_node::mount() {
     string src = mirror_path();
     const char *src_path = access(src.data(), F_OK) == 0 ? src.data() : nullptr;
     if (!isa<tmpfs_node>(parent())) {
         const string &dest = node_path();
-        auto worker_dir = worker_path();
+        auto worker_dir = node_path();
+        struct stat st{};
         mkdirs(worker_dir.data(), 0);
-        bind_mount("tmpfs", worker_dir.data(), worker_dir.data());
+        VLOGD("tmpfs", "tmpfs", worker_dir.data());
+        if (xmount("tmpfs", worker_dir.data(), "tmpfs", 0, "mode=755"))
+            return;
+        stat(worker_dir.data(), &st);
+        worker_id.insert(st.st_dev);
         clone_attr(src_path ?: parent()->node_path().data(), worker_dir.data());
         dir_node::mount();
-        VLOGD(skip_mirror() ? "replace" : "move", worker_dir.data(), dest.data());
-        xmount(worker_dir.data(), dest.data(), nullptr, MS_MOVE, nullptr);
+        xmount(nullptr, worker_dir.data(), nullptr, MS_REMOUNT | MS_RDONLY, nullptr);
     } else {
-        const string dest = worker_path();
+        const string dest = node_path();
         // We don't need another layer of tmpfs if parent is tmpfs
         mkdir(dest.data(), 0);
-        clone_attr(src_path ?: parent()->worker_path().data(), dest.data());
+        clone_attr(src_path ?: parent()->node_path().data(), dest.data());
         dir_node::mount();
     }
 }
@@ -206,20 +212,9 @@ public:
         if (access(src.data(), F_OK))
             return;
 
-        const string dir_name = isa<tmpfs_node>(parent()) ? parent()->worker_path() : parent()->node_path();
-        if (name() == "supolicy") {
-            string dest = dir_name + "/" + name();
-            VLOGD("create", "./magiskpolicy", dest.data());
-            xsymlink("./magiskpolicy", dest.data());
-            return; 
-        }
-        if (name() != "magisk" && name() != "magiskpolicy") {
-            string dest = dir_name + "/" + name();
-            VLOGD("create", "./magisk", dest.data());
-            xsymlink("./magisk", dest.data());
-            return;
-        }
-        create_and_mount("magisk", src, true);
+        const string dir_name = parent()->node_path();
+        string dest = dir_name + "/" + name();
+        xsymlink(src.data(), dest.data());
     }
 };
 
@@ -351,9 +346,6 @@ void load_modules() {
         root->prepare();
         root->mount();
     }
-
-    ssprintf(buf, sizeof(buf), "%s/" WORKERDIR, get_magisk_tmp());
-    xmount(nullptr, buf, nullptr, MS_REMOUNT | MS_RDONLY, nullptr);
 }
 
 void su_mount() {
@@ -403,9 +395,6 @@ void su_mount() {
         root->prepare();
         root->mount();
     }
-
-    ssprintf(buf, sizeof(buf), "%s/" WORKERDIR, get_magisk_tmp());
-    xmount(nullptr, buf, nullptr, MS_REMOUNT | MS_RDONLY, nullptr);
 }
 
 

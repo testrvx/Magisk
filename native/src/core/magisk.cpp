@@ -12,7 +12,7 @@
 
 using namespace std;
 
-int mount_sbin();
+int mount_sbin(const char *tmp = "/sbin");
 
 static void install_applet(const char *path){
     string s;
@@ -109,12 +109,8 @@ int magisk_main(int argc, char *argv[]) {
     } else if (argc > 2 && argv[1] == "--setup-sbin"sv) {
         const char *magisk_tmp = (argc > 3)? argv[3] :  "/sbin";
 
-        if (strcmp(magisk_tmp, "/sbin") == 0) {
-            if (mount_sbin() != 0) 
-                return -1;
-        } else if (tmpfs_mount("magisk", magisk_tmp) != 0) {
+        if (mount_sbin(magisk_tmp) != 0) 
             return -1;
-        }
         // copy all binaries to sbin
         const char *bins[] = { "magisk32", "magisk64", "magiskpolicy", "stub.apk", nullptr };
         for (int i = 0; bins[i]; i++){

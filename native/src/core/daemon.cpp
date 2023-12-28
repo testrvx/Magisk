@@ -369,9 +369,7 @@ static void daemon_entry() {
 
     // Get self stat
     xstat("/proc/self/exe", &self_st);
-
-    // get magisktmpfs fd
-    magisktmpfs_fd = open(get_magisk_tmp(), O_PATH);
+    worker_id.insert(self_st.st_dev);
 
     // Get API level
     parse_prop_file("/system/build.prop", [](auto key, auto val) -> bool {
@@ -429,6 +427,9 @@ static void daemon_entry() {
     xmount(nullptr, tmp, nullptr, MS_PRIVATE | MS_REC, nullptr);
     // Fix sdcardfs bug on old kernel
     xmount(nullptr, "/mnt", nullptr, MS_SLAVE | MS_REC, nullptr);
+
+    // get magisktmpfs fd
+    magisktmpfs_fd = open(tmp, O_PATH);
 
     // Use isolated devpts if kernel support
     if (access("/dev/pts/ptmx", F_OK) == 0) {

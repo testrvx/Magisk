@@ -85,10 +85,6 @@ void mount_mirrors() {
         }
     }
 
-    // Prepare worker
-    ssprintf(path, sizeof(path), "%s/" WORKERDIR, get_magisk_tmp());
-    xmount("worker", path, "tmpfs", 0, "mode=755");
-    xmount(nullptr, path, nullptr, MS_PRIVATE, nullptr);
     // Recursively bind mount / to mirror dir
     // Keep mirror shared so that mounting during post-fs-data will be propagated
     if (auto mirror_dir = get_magisk_tmp() + "/"s MIRRDIR; !rec_mount("/", mirror_dir)) {
