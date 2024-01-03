@@ -22,7 +22,7 @@ android {
     namespace = "com.topjohnwu.magisk"
 
     defaultConfig {
-        applicationId = "com.topjohnwu.magisk"
+        applicationId = "io.github.huskydg.magisk.lite"
         vectorDrawables.useSupportLibrary = true
         versionName = Config.version
         versionCode = Config.versionCode

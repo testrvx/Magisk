@@ -36,10 +36,10 @@ class NetworkService(
     }
 
     // UpdateInfo
-    private suspend fun fetchStableUpdate() = pages.fetchUpdateJSON("stable.json")
-    private suspend fun fetchBetaUpdate() = pages.fetchUpdateJSON("beta.json")
-    private suspend fun fetchCanaryUpdate() = pages.fetchUpdateJSON("canary.json")
-    private suspend fun fetchDebugUpdate() = pages.fetchUpdateJSON("debug.json")
+    private suspend fun fetchStableUpdate() = pages.fetchUpdateJSON("stable_lite.json")
+    private suspend fun fetchBetaUpdate() = pages.fetchUpdateJSON("beta_lite.json")
+    private suspend fun fetchCanaryUpdate() = pages.fetchUpdateJSON("canary_lite.json")
+    private suspend fun fetchDebugUpdate() = pages.fetchUpdateJSON("debug_lite.json")
     private suspend fun fetchCustomUpdate(url: String) = pages.fetchUpdateJSON(url)
 
     private inline fun <T> safe(factory: () -> T): T? {
