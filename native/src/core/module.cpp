@@ -302,8 +302,9 @@ void load_modules() {
         system->collect_module_files(module, fd);
         close(fd);
     }
-    if (get_magisk_tmp() != "/sbin"sv || !str_contains(getenv("PATH") ?: "", "/sbin")) {
-        // Need to inject our binaries into /system/bin
+    auto env_path = split(getenv("PATH"), ":");
+    if (std::find(env_path.begin(), env_path.end(), get_magisk_tmp()) == env_path.end()) {
+        // Need to inject our binaries into PATH
         inject_magisk_bins(system);
     }
 

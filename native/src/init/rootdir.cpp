@@ -13,7 +13,6 @@ using namespace std;
 
 static vector<string> rc_list;
 
-#define ROOTMIR         MIRRDIR "/system_root"
 #define NEW_INITRC_DIR  "/system/etc/init/hw"
 #define INIT_RC         "init.rc"
 
@@ -153,30 +152,30 @@ static void load_overlay_rc(const char *overlay) {
     }
 }
 
-static void recreate_sbin(const char *mirror, bool use_bind_mount) {
+static void recreate_bin(const char *mirror, const char *bin, bool use_bind_mount) {
     auto dp = xopen_dir(mirror);
     int src = dirfd(dp.get());
     char buf[4096];
     for (dirent *entry; (entry = xreaddir(dp.get()));) {
-        string sbin_path = "/sbin/"s + entry->d_name;
+        string bin_path = bin + "/"s + entry->d_name;
         struct stat st;
         fstatat(src, entry->d_name, &st, AT_SYMLINK_NOFOLLOW);
         if (S_ISLNK(st.st_mode)) {
             xreadlinkat(src, entry->d_name, buf, sizeof(buf));
-            xsymlink(buf, sbin_path.data());
+            xsymlink(buf, bin_path.data());
         } else {
             sprintf(buf, "%s/%s", mirror, entry->d_name);
             if (use_bind_mount) {
                 auto mode = st.st_mode & 0777;
                 // Create dummy
                 if (S_ISDIR(st.st_mode))
-                    xmkdir(sbin_path.data(), mode);
+                    xmkdir(bin_path.data(), mode);
                 else
-                    close(xopen(sbin_path.data(), O_CREAT | O_WRONLY | O_CLOEXEC, mode));
+                    close(xopen(bin_path.data(), O_CREAT | O_WRONLY | O_CLOEXEC, mode));
 
-                xmount(buf, sbin_path.data(), nullptr, MS_BIND, nullptr);
+                xmount(buf, bin_path.data(), nullptr, MS_BIND, nullptr);
             } else {
-                xsymlink(buf, sbin_path.data());
+                xsymlink(buf, bin_path.data());
             }
         }
     }
@@ -256,22 +255,27 @@ void MagiskInit::patch_ro_root() {
 
     if (access("/sbin", F_OK) == 0) {
         tmp_dir = "/sbin";
+    } else if (access("/apex/com.android.runtime/bin", F_OK) == 0) {
+        tmp_dir = "/apex/com.android.runtime/bin";
+        clone_attr(tmp_dir.data(), "/data");
     } else {
         tmp_dir = "/debug_ramdisk";
         xmkdir("/data/debug_ramdisk", 0);
         xmount("/debug_ramdisk", "/data/debug_ramdisk", nullptr, MS_MOVE, nullptr);
     }
 
+    // Recreate original bin structure
+    xmkdir("/data/" INTLROOT, 0711);
+    xmkdir("/data/" MIRRDIR, 0);
+    xmount(tmp_dir.data(), "/data/" MIRRDIR, nullptr, MS_BIND, nullptr);
+    xmount(nullptr, "/data/" MIRRDIR, nullptr, MS_PRIVATE, nullptr);
+
     setup_tmp(tmp_dir.data());
     chdir(tmp_dir.data());
 
-    if (tmp_dir == "/sbin") {
-        // Recreate original sbin structure
-        xmkdir(ROOTMIR, 0755);
-        xmount("/", ROOTMIR, nullptr, MS_BIND, nullptr);
-        recreate_sbin(ROOTMIR "/sbin", true);
-        xumount2(ROOTMIR, MNT_DETACH);
-    } else {
+    recreate_bin("/data/" MIRRDIR, tmp_dir.data(), true);
+
+    if (tmp_dir == "/debug_ramdisk") {
         // Restore debug_ramdisk
         xmount("/data/debug_ramdisk", "/debug_ramdisk", nullptr, MS_MOVE, nullptr);
         rmdir("/data/debug_ramdisk");
@@ -399,7 +403,7 @@ int magisk_proxy_main(int argc, char *argv[]) {
     rmdir(PRE_TMPSRC);
 
     // Create symlinks pointing back to /root
-    recreate_sbin("/root", false);
+    recreate_bin("/root", "/sbin", false);
 
     // Tell magiskd to remount rootfs
     setenv("REMOUNT_ROOT", "1", 1);
