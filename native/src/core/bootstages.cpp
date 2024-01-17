@@ -315,6 +315,8 @@ bool MagiskD::post_fs_data() const {
 
     bool safe_mode = false;
 
+    initialize_denylist();
+
     if (access(SECURE_DIR, F_OK) != 0) {
         LOGE(SECURE_DIR " is not present, abort\n");
         goto early_abort;
@@ -330,10 +332,8 @@ bool MagiskD::post_fs_data() const {
         safe_mode = true;
         // Disable all modules and denylist so next boot will be clean
         disable_modules();
-        disable_deny();
     } else {
         exec_common_scripts("post-fs-data");
-        initialize_denylist();
         handle_modules();
     }
 

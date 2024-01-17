@@ -124,7 +124,7 @@ static void check_zygote() {
             if (read_ns(pid, &st) == 0) {
                 LOGI("logcat: zygote PID=[%d]\n", pid);
                 zygote_map[pid] = st;
-                if (sulist_enabled && fork_dont_care() == 0) {
+                if (fork_dont_care() == 0) {
                     revert_unmount(pid);
                     _exit(0);
                 }
@@ -133,24 +133,8 @@ static void check_zygote() {
     }
 }
 
-static void operate_on_list(int pid) {
-    {
-        (sulist_enabled) ?
-        // if sulist is enabled
-        // the target is the process we want to mount magisk
-        // else, the target is the process we want to unmount magisk
-        do_mount_magisk(pid) : revert_unmount(pid);
-    }
-}
-
-static void handle_proc(int pid, bool app_zygote = false) {
+static void handle_proc(int pid) {
     if (fork_dont_care() == 0) {
-        if (app_zygote) {
-            operate_on_list(pid);
-            kill(pid, SIGCONT);
-            _exit(0);
-        }
-
         int ppid = parse_ppid(pid);
         auto it = zygote_map.find(ppid);
         if (it == zygote_map.end()) {
@@ -170,44 +154,8 @@ static void handle_proc(int pid, bool app_zygote = false) {
             }
         }
 
-        operate_on_list(pid);
+        do_mount_magisk(pid);
         _exit(0);
-    }
-}
-
-static void process_main_buffer(struct logger_entry *buf) {
-    AndroidLogEntry entry;
-    if (android_log_processLogBuffer(buf, &entry) < 0) return;
-    entry.tagLen--;
-    auto tag = string_view(entry.tag, entry.tagLen);
-
-    static bool ready = false;
-    if (tag == "AppZygote") {
-        if (entry.uid != 1000) return;
-        if (entry.message[0] == 'S') {
-            ready = true;
-        } else {
-            ready = false;
-        }
-        return;
-    }
-
-    if (!ready || tag != "AppZygoteInit") return;
-    if (!proc_context_match(buf->pid, "u:r:app_zygote:s0")) return;
-    ready = false;
-
-    char cmdline[1024];
-    sprintf(cmdline, "/proc/%d/cmdline", buf->pid);
-    if (auto f = open_file(cmdline, "re")) {
-        fgets(cmdline, sizeof(cmdline), f.get());
-    } else {
-        return;
-    }
-
-    if (is_deny_target(entry.uid, cmdline)) {
-        kill(buf->pid, SIGSTOP);
-        LOGI("logcat: [%s] PID=[%d] UID=[%d]\n", cmdline, buf->pid, entry.uid);
-        handle_proc(buf->pid, true);
     }
 }
 
@@ -254,15 +202,7 @@ static void process_events_buffer(struct logger_entry *buf) {
                 break;
             }
 
-            switch (msg.entry.lid) {
-                case LOG_ID_EVENTS:
-                    process_events_buffer(&msg.entry);
-                    break;
-                case LOG_ID_MAIN:
-                    process_main_buffer(&msg.entry);
-                default:
-                    break;
-            }
+            if (msg.entry.lid == LOG_ID_EVENTS) process_events_buffer(&msg.entry);
         }
 
         if (logcat_exit) {

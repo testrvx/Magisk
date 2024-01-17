@@ -19,8 +19,8 @@ atomic_flag skip_pkg_rescan;
 
 atomic_flag *p_skip_pkg_rescan = &skip_pkg_rescan;
 
-bool sulist_enabled = false;
-static const char *table_name = "hidelist";
+bool sulist_enabled = true;
+static const char *table_name = "sulist";
 
 // For the following data structures:
 // If package name == ISOLATED_MAGIC, or app ID == -1, it means isolated service
@@ -43,7 +43,7 @@ static bool add_hide_set(const char *pkg, const char *proc);
 static void rescan_apps() {
     LOGD("denylist: rescanning apps\n");
 
-    if (sulist_enabled){
+    {
         db_strings str;
         get_db_strings(str, SU_MANAGER);
         string manager_pkg = (str[SU_MANAGER].empty())?
@@ -450,7 +450,6 @@ int enable_deny() {
         if (access("/proc/self/ns/mnt", F_OK) != 0) {
             LOGW("The kernel does not support mount namespace\n");
             sulist_enabled = false;
-            table_name = "hidelist";
             update_sulist_config(false);
             return DenyResponse::NO_NS;
         }
@@ -458,11 +457,7 @@ int enable_deny() {
         if (procfp == nullptr && (procfp = opendir("/proc")) == nullptr)
             goto daemon_error;
 
-        if (sulist_enabled) {
-            LOGI("* Enable SuList\n");
-        } else {
-            LOGI("* Enable MagiskHide\n");
-        }
+        LOGI("* Enable SuList\n");
 
         denylist_enforced = true;
 
@@ -484,7 +479,7 @@ int enable_deny() {
             kill_process<&proc_context_match>("u:r:app_zygote:s0", true);
         }
 
-        if (sulist_enabled) {
+        {
             // Add SystemUI and Settings to sulist because modules might need to modify it
             add_hide_set("com.android.systemui", "com.android.systemui");
             add_hide_set("com.android.settings", "com.android.settings");
@@ -498,41 +493,18 @@ int enable_deny() {
 
     daemon_error:
     sulist_enabled = false;
-    table_name = "hidelist";
     update_sulist_config(false);
     return DenyResponse::ERROR;
 }
 
 int disable_deny() {
     // sulist mode cannot be turn off without reboot
-    if (sulist_enabled)
-        return DenyResponse::SULIST_NO_DISABLE;
-
-    if (denylist_enforced) {
-        denylist_enforced = false;
-        logcat_exit = true;
-        LOGI("* Disable MagiskHide\n");
-    }
-
-    update_deny_config();
-
-    return DenyResponse::OK;
+    return DenyResponse::SULIST_NO_DISABLE;
 }
 
 void initialize_denylist() {
-    if (!denylist_enforced) {
-        db_settings dbs;
-        get_db_settings(dbs, DENYLIST_CONFIG);
-        if (dbs[DENYLIST_CONFIG]) {
-            // get sulist status before enable denylist
-            get_db_settings(dbs, SULIST_CONFIG);
-            if (dbs[SULIST_CONFIG]) {
-                sulist_enabled = true;
-                table_name = "sulist";
-            }
-            enable_deny();
-        }
-    }
+    sulist_enabled = true;
+    enable_deny();
 }
 
 bool is_deny_target(int uid, string_view process, int max_len) {
@@ -549,7 +521,7 @@ bool is_deny_target(int uid, string_view process, int max_len) {
 
     if (app_id == manager_app_id) {
         // allow manager to access Magisk
-        return (sulist_enabled)? true : false;
+        return true;
     }
 
     if (app_id >= 90000) {
