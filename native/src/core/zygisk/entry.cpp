@@ -6,10 +6,16 @@
 #include <android/dlext.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <sys/ptrace.h>
+#include <unistd.h>
+#include <sys/syscall.h>
+#include <sys/mman.h>
 
 #include <base.hpp>
 #include <consts.hpp>
 
+
+#include "ptrace_utils.hpp"
 #include "zygisk.hpp"
 #include "module.hpp"
 
@@ -140,6 +146,136 @@ static void connect_companion(int client, bool is_64_bit) {
 
 static int clean_ns64 = -1, clean_ns32 = -1;
 
+#ifndef SYS_mmap
+#define SYS_mmap SYS_mmap2
+#endif
+
+#define signal (WSTOPSIG(status))
+
+static long xptrace(int request, pid_t pid, void *addr = nullptr, void *data = nullptr) {
+    long ret = ptrace(request, pid, addr, data);
+    if (ret < 0)
+        PLOGE("ptrace %d", pid);
+    return ret;
+}
+
+static inline long xptrace(int request, pid_t pid, void *addr, uintptr_t data) {
+    return xptrace(request, pid, addr, reinterpret_cast<void *>(data));
+}
+
+static void ptrace_unload_remap(int remote_pid) {
+    int pipe_fd[2];
+    pipe(pipe_fd);
+
+    if (fork_dont_care() == 0) {
+        // ptrace to replace munmmap with mmap anonymous
+        int ptrace_ret = xptrace(PTRACE_SEIZE, remote_pid, 0, PTRACE_O_TRACESYSGOOD);
+
+        write_int(pipe_fd[1], 0);
+
+        if (!ptrace_ret) {
+            LOGD("zygisk: attached pid=%d\n", remote_pid);
+
+	    int status;
+            struct user_regs_struct regs, backup;
+            
+            for (int result;;) {
+                result = waitpid(remote_pid, &status, __WALL);
+                if (result == -1) {
+                    if (errno == EINTR) {
+                        continue;
+                    } else {
+                        PLOGE("wait %d", remote_pid);
+                        break;
+                    }
+                }
+                if (WIFEXITED(status))
+                    break; // process died
+                if (signal == (SIGTRAP|0x80)) {
+                    // Get the current register values
+                    get_regs(remote_pid, regs);
+            
+                    // Check if the system call is munmap
+                    if (regs.REG_SYSNO == SYS_munmap)
+                    {
+                        // munmap entry
+                        LOGD("zygisk: process %d calling munmap(addr=%llx, len=%lld)\n", remote_pid, regs.REG_SYSARG0, regs.REG_SYSARG1);
+                        
+                        // check if mapping is libzygisk.so
+                        bool mapped_libzygisk = false;
+                        bool mapping_is_libzygisk = false;
+                        for (auto &info : Scan_proc(std::to_string(remote_pid))) {
+                            if (strstr(info.path.data(), "/magisk") == nullptr)
+                                continue;
+                            mapped_libzygisk = true;
+	                    if (info.start == regs.REG_SYSARG0) {
+	                        mapping_is_libzygisk = true;
+                                break;
+			    }
+                        }
+                        if (!mapping_is_libzygisk) {
+                            // Continue the remote_pid until munmap exits
+                            xptrace(PTRACE_SYSCALL, remote_pid);
+                            waitpid(remote_pid, &status, __WALL);
+                            goto next_entry;
+                        }
+                        if (!mapped_libzygisk) {
+                            // libzygisk unmapped 
+                            break;
+                        }
+    
+                        backup = regs;
+    
+                        // Replace munmap with mmap system call
+                        bool modified_syscall = modify_syscall(remote_pid,
+                                       (unsigned long[]){
+                                           static_cast<unsigned long>(SYS_mmap),                                // syscall
+                                           static_cast<unsigned long>(backup.REG_SYSARG0),                      // addr
+                                           static_cast<unsigned long>(backup.REG_SYSARG1),                      // len
+                                           static_cast<unsigned long>(PROT_READ),                               // prot
+                                           static_cast<unsigned long>(MAP_ANONYMOUS | MAP_PRIVATE | MAP_FIXED), // flags
+                                           static_cast<unsigned long>(-1),                                      // fd
+                                           static_cast<unsigned long>(0)                                        // offset
+                                       });
+                        
+                        // Continue the remote_pid until mmap exits
+                        xptrace(PTRACE_SYSCALL, remote_pid);
+                        waitpid(remote_pid, &status, __WALL);
+    
+                        if (modified_syscall) {
+                            get_regs(remote_pid, regs);
+                            LOGD("zygisk: pid=%d, mmap ret=%p\n", remote_pid, regs.REG_RET);
+            
+                            // redirect return value from mmap to munmap
+                            regs.REG_RET = !(regs.REG_RET);
+                        
+                            LOGD("zygisk: pid=%d, redirect to unmmap ret=%lld\n", remote_pid, regs.REG_RET);
+                            set_regs(remote_pid, regs);
+			}
+                    } else {
+                        // Continue the remote_pid until syscall exits
+                        xptrace(PTRACE_SYSCALL, remote_pid);
+                        waitpid(remote_pid, &status, __WALL);
+                    }
+                }
+                next_entry:
+                xptrace(PTRACE_SYSCALL, remote_pid, 0, (WIFSTOPPED(status) && !(signal & SIGTRAP))? signal : 0);
+            }
+            LOGD("zygisk: cleanup completed pid=%d\n", remote_pid);
+            xptrace(PTRACE_DETACH, remote_pid);
+        } else {
+            LOGD("zygisk: failed to attach pid=%d\n", remote_pid);
+        }
+        _exit(0);
+    } else {
+        read_int(pipe_fd[0]);
+        close(pipe_fd[0]);
+        close(pipe_fd[1]);
+    }
+}
+
+#undef signal
+
 extern bool uid_granted_root(int uid);
 static void get_process_info(int client, const sock_cred *cred) {
     int uid = read_int(client);
@@ -167,6 +303,10 @@ static void get_process_info(int client, const sock_cred *cred) {
     if (uid_granted_root(uid)) {
         flags |= PROCESS_GRANTED_ROOT;
     }
+    
+    if ((denylist_enforced || sulist_enabled) && (flags & PROCESS_ON_DENYLIST)) {
+        ptrace_unload_remap(cred->pid);
+	}
 
     xwrite(client, &flags, sizeof(flags));
 

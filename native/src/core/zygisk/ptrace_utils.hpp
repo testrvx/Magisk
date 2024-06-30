@@ -25,6 +25,40 @@
 #define user_regs_struct user_regs
 #endif
 
+#if defined(__aarch64__)
+#define REG_SYSNO regs[8]
+#define REG_SYSARG0 regs[0]
+#define REG_SYSARG1 regs[1]
+#define REG_SYSARG2 regs[2]
+#define REG_SYSARG3 regs[3]
+#define REG_SYSARG4 regs[4]
+#define REG_SYSARG5 regs[5]
+#elif defined(__i386__)
+#define REG_SYSNO eax
+#define REG_SYSARG0 ebx
+#define REG_SYSARG1 ecx
+#define REG_SYSARG2 edx
+#define REG_SYSARG3 esi
+#define REG_SYSARG4 edi
+#define REG_SYSARG5 ebp
+#elif defined(__x86_64__)
+#define REG_SYSNO rax
+#define REG_SYSARG0 rdi
+#define REG_SYSARG1 rsi
+#define REG_SYSARG2 rdx
+#define REG_SYSARG3 rcx
+#define REG_SYSARG4 r8
+#define REG_SYSARG5 r9
+#elif defined(__arm__)
+#define REG_SYSNO uregs[7]
+#define REG_SYSARG0 uregs[0]
+#define REG_SYSARG1 uregs[1]
+#define REG_SYSARG2 uregs[2]
+#define REG_SYSARG3 uregs[3]
+#define REG_SYSARG4 uregs[4]
+#define REG_SYSARG5 uregs[5]
+#endif
+
 #define WPTEVENT(x) (x >> 16)
 
 std::vector<lsplt::MapInfo> Scan_proc(const std::string& pid = "self");
@@ -82,3 +116,5 @@ inline const char* sigabbrev_np(int sig) {
     if (sig > 0 && sig < NSIG) return sys_signame[sig];
     return "(unknown)";
 }
+
+bool modify_syscall(int pid, unsigned long *syscallargs);

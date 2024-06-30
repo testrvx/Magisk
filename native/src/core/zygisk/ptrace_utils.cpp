@@ -365,3 +365,30 @@ std::string parse_status(int status) {
     }
     return os.str();
 }
+
+
+
+bool modify_syscall(int pid, unsigned long *syscallargs)
+{
+#if defined(__aarch64__) || defined(__arm__)
+    int syscallno = syscallargs[0];
+    struct iovec iov = {
+        .iov_base = &syscallno,
+        .iov_len = sizeof(int),
+    };
+    if (ptrace(PTRACE_SETREGSET, pid, NT_ARM_SYSTEM_CALL, &iov))
+        return false;
+#endif
+    struct user_regs_struct regs;
+    get_regs(pid, regs);
+    regs.REG_SYSNO = syscallargs[0];
+    regs.REG_SYSARG0 = syscallargs[1];
+    regs.REG_SYSARG1 = syscallargs[2];
+    regs.REG_SYSARG2 = syscallargs[3];
+    regs.REG_SYSARG3 = syscallargs[4];
+    regs.REG_SYSARG4 = syscallargs[5];
+    regs.REG_SYSARG5 = syscallargs[6];
+
+    return set_regs(pid, regs);
+}
+
