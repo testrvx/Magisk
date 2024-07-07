@@ -63,6 +63,17 @@ private:
 // zygote pid -> mnt ns
 static map<int, struct stat> zygote_map;
 
+// syscall state
+static map<int, int> sys_state;
+static map<int, int> mnt_ns_fd;
+enum sys_state_def {
+    SYSCALL_STATE_NONE,
+    SYSCALL_STATE_ENTRY,
+    SYSCALL_STATE_EXIT,
+
+    END
+};
+
 // attaches set
 static pid_set attaches;
 
@@ -81,6 +92,8 @@ static void detach_pid(int pid, int signal = 0) {
     attaches[pid] = false;
     allowed[pid] = false;
     checked[pid] = false;
+    sys_state.erase(pid);
+    mnt_ns_fd.erase(pid);
     ptrace(PTRACE_DETACH, pid, 0, signal);
     PTRACE_LOG("detach\n");
 }
@@ -323,6 +336,8 @@ static void inotify_event(int) {
 static void term_thread(int) {
     LOGD("proc_monitor: cleaning up\n");
     zygote_map.clear();
+    sys_state.clear();
+    mnt_ns_fd.clear();
     attaches.reset();
     checked.reset();
     allowed.reset();
@@ -458,6 +473,8 @@ void proc_monitor() {
 
     // Reset cached result
     zygote_map.clear();
+    sys_state.clear();
+    mnt_ns_fd.clear();
     attaches.reset();
     checked.reset();
     allowed.reset();
@@ -540,6 +557,7 @@ void proc_monitor() {
             case PTRACE_EVENT_VFORK:
                 PTRACE_LOG("zygote forked: [%lu]\n", msg);
                 attaches[msg] = true;
+                sys_state[msg] = SYSCALL_STATE_NONE;
                 break;
             case PTRACE_EVENT_EXIT:
                 PTRACE_LOG("zygote exited with status: [%lu]\n", msg);
@@ -552,6 +570,19 @@ void proc_monitor() {
             }
             xptrace(PTRACE_CONT, pid);
         } else if (signal == (SIGTRAP | 0x80)) {
+            switch (sys_state[pid]) {
+                case SYSCALL_STATE_NONE:
+                    sys_state[pid] = SYSCALL_STATE_ENTRY;
+                    break;
+                case SYSCALL_STATE_ENTRY:
+                    sys_state[pid] = SYSCALL_STATE_EXIT;
+                    break;
+                case SYSCALL_STATE_EXIT:
+                    sys_state[pid] = SYSCALL_STATE_ENTRY;
+                    break;
+                default:
+                    break;
+            }
             do {
                 struct stat st {};
                 char path[128];
@@ -559,8 +590,10 @@ void proc_monitor() {
                 sprintf(path, "/proc/%d", pid);
                 stat(path, & st);
                 PTRACE_LOG("UID=[%d]\n", st.st_uid);
-                if (st.st_uid == 0)
+                if (st.st_uid == 0) {
+                    // TODO : inject unshare twice
                     continue;
+                }
                 //LOGD("proc_monitor: PID=[%d] UID=[%d]\n", pid, st.st_uid);
                 if ((st.st_uid % 100000) >= 90000) {
                     PTRACE_LOG("is isolated process\n");
